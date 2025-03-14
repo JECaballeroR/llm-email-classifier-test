@@ -55,6 +55,7 @@ sample_emails = [
 ]
 
 
+
 class EmailProcessor:
     def __init__(self):
         """Initialize the email processor with OpenAI API key."""
@@ -76,7 +77,51 @@ class EmailProcessor:
         2. Make the API call with appropriate error handling
         3. Validate and return the classification
         """
-        pass
+     
+        messages=[
+                {
+                    "role": "user",
+                    "content": "You're an AI assistant tasked with classifying emails."
+                },{
+                    "role": "user",
+                    "content": f"""
+                                
+                                Classify the email using the following categories:
+                                - complaint
+                                - inquiry
+                                - feedback
+                                - support_request
+                                - other
+                
+                                Email:
+                                ---
+                                Subject: {email.get('subject', 'No subject')}
+                                Body: {email.get('body', 'No body')}
+                                ---
+                
+                                Respond with the category name only, as written above
+                                """
+                }
+            ]
+
+        try:
+            completion = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=5,
+                temperature=0
+            )
+            
+            classification = completion.choices[0].message.content.strip().lower()
+            if classification in self.valid_categories:
+                return classification
+            else:
+                logger.error(f"The classification the model gave is not on the valid list - {classification}")
+                return "other"
+                
+        except Exception as e:
+            logger.error(f"There was an error classifying the email {e}")
+            return None
 
     def generate_response(self, email: Dict, classification: str) -> Optional[str]:
         """
@@ -87,9 +132,57 @@ class EmailProcessor:
         2. Implement appropriate response templates
         3. Add error handling
         """
-        pass
+
+        
+
+        messages=[
+                        {
+                            "role": "user",
+                            "content": "You're an AI assistant tasked with responding to emails."
+                        },{
+                            "role": "user",
+                            "content": f"""
+                                        
+                                       Given the following classification as {classification}
+                                    
+                        
+                                        And the following email:
+                                        ---
+                                        Subject: {email.get('subject', 'No subject')}
+                                        Body: {email.get('body', 'No body')}
+                                        ---
+                        
+                                        Write an email response to send to the user. Be polite, professional and service focused.
+
+                                        Don't add commments.
+                                        Don't add placeholder text, call the receiver "you" or similar. Don't put any placeholder text like "[recipient's name]"
+                                        write a generic email. You're an AIlia Assire, a Proffesional problem solver for company A. Sign the email with that
+                                        
+                                        """
+                        }
+         ]
+
+        try:
+            completion = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+               
+                temperature=0
+            )
+            
+            email = completion.choices[0].message.content
+         
+            logger.info(f"The email body is: {email}")
+
+            return email
+            
+                
+        except Exception as e:
+            logger.error(f"There was an error classifying the email {e}")
+            return None
 
 
+        
 class EmailAutomationSystem:
     def __init__(self, processor: EmailProcessor):
         """Initialize the automation system with an EmailProcessor."""
@@ -112,42 +205,91 @@ class EmailAutomationSystem:
         2. Add appropriate error handling
         3. Return processing results
         """
-        pass
+        processor=EmailProcessor()
+        classification = processor.classify_email(email)
+        try:
+            response = self.response_handlers[classification](email)
+            return [email.get('id', '0001'), 'yes', classification, response]
+        except:
+            return [email.get('id', '0001'), 'no', classification, '']
+            
+       
+
+        
 
     def _handle_complaint(self, email: Dict):
         """
         Handle complaint emails.
         TODO: Implement complaint handling logic
         """
-        pass
-
+        try:
+            processor=EmailProcessor()
+            response =processor.generate_response(email=email, classification="complaint")
+            send_complaint_response( email.get('id', '0001'), response)
+            create_urgent_ticket(email.get('id', '0001'), 'complaint', email.get('body', 'No email body'))
+    
+        
+            return  response
+        except:
+            return ''
+        
     def _handle_inquiry(self, email: Dict):
         """
         Handle inquiry emails.
         TODO: Implement inquiry handling logic
         """
-        pass
+        try:
+            processor=EmailProcessor()
+            response = processor.generate_response(email=email, classification="inquiry")
+            send_standard_response( email.get('id', '0001'), response)
+            return response
+        except:
+            return  ''
+
+
 
     def _handle_feedback(self, email: Dict):
         """
         Handle feedback emails.
         TODO: Implement feedback handling logic
         """
-        pass
+        try:
+            processor=EmailProcessor()
+            response =processor.generate_response(email=email, classification="feedback")
+            log_customer_feedback( email.get('id', '0001'), email.get('body', 'No feedback'))
+            send_standard_response( email.get('id', '0001'), response)
+            return  response
+        except:
+            return  ''
+
 
     def _handle_support_request(self, email: Dict):
         """
         Handle support request emails.
         TODO: Implement support request handling logic
         """
-        pass
+        try:
+            processor=EmailProcessor()
+            response = processor.generate_response(email=email, classification="support_request")
+            create_support_ticket( email.get('id', '0001'), context =  email.get('body', 'No email body'))
+            return  response
+        except:
+            return  ''
 
     def _handle_other(self, email: Dict):
         """
         Handle other category emails.
         TODO: Implement handling logic for other categories
         """
-        pass
+        try:
+            processor=EmailProcessor()
+            response = processor.generate_response(email=email, classification="other")
+            send_standard_response( email.get('id', '0001'), response)      
+            return  response
+        except:
+            return ''
+
+
 
 # Mock service functions
 def send_complaint_response(email_id: str, response: str):
@@ -177,6 +319,8 @@ def create_support_ticket(email_id: str, context: str):
 def log_customer_feedback(email_id: str, feedback: str):
     """Mock function to simulate logging customer feedback"""
     logger.info(f"Logging feedback for email {email_id}")
+    logger.info(f" {feedback}")
+
     # In real implementation: integrate with feedback system
 
 
@@ -194,7 +338,7 @@ def run_demonstration():
         results.append(result)
 
     # Create a summary DataFrame
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(results, columns=["email_id", "success", "classification", "response_sent"])
     print("\nProcessing Summary:")
     print(df[["email_id", "success", "classification", "response_sent"]])
 
@@ -203,4 +347,4 @@ def run_demonstration():
 
 # Example usage:
 if __name__ == "__main__":
-    results_df = run_demonstration()
+    results_df = run_demonstration()    
